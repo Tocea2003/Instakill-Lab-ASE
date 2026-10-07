@@ -5,13 +5,12 @@ import com.instakill.common.error.NotFoundException;
 import com.instakill.common.id.IdGenerator;
 import com.instakill.interaction.domain.Comment;
 import com.instakill.interaction.domain.CommentRepository;
+import com.instakill.interaction.domain.DomainEventPublisher;
 import com.instakill.interaction.domain.Like;
 import com.instakill.interaction.domain.LikeCreatedEvent;
 import com.instakill.interaction.domain.LikeRepository;
 import com.instakill.post.domain.Post;
 import com.instakill.post.domain.PostRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,24 +22,26 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class InteractionService {
 
-    private static final Logger log = LoggerFactory.getLogger(InteractionService.class);
-
     private final CommentRepository comments;
     private final LikeRepository likes;
     private final PostRepository posts;
     private final IdGenerator idGenerator;
     private final Clock clock;
+    // Where domain events go is decided by the registered publisher implementation.
+    private final DomainEventPublisher eventPublisher;
 
     public InteractionService(CommentRepository comments,
                               LikeRepository likes,
                               PostRepository posts,
                               IdGenerator idGenerator,
-                              Clock clock) {
+                              Clock clock,
+                              DomainEventPublisher eventPublisher) {
         this.comments = comments;
         this.likes = likes;
         this.posts = posts;
         this.idGenerator = idGenerator;
         this.clock = clock;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -75,8 +76,7 @@ public class InteractionService {
                     likes.save(like);
                     long likeCount = likes.countByPostId(postId);
                     posts.save(post.withLikeCount(likeCount).withUpdatedAt(now));
-                    // Direct logging instead of using DomainEventPublisher pattern
-                    log.debug("Like created event: postId={}, userId={}, timestamp={}", postId, userId, now);
+                    eventPublisher.publish(new LikeCreatedEvent(postId, userId, now));
                     return new ToggleLikeResult(true, likeCount);
                 });
     }

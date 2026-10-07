@@ -3,6 +3,9 @@ package com.instakill.interaction.application;
 import com.instakill.common.clock.Clock;
 import com.instakill.common.id.IdGenerator;
 import com.instakill.interaction.domain.CommentRepository;
+import com.instakill.interaction.domain.DomainEventPublisher;
+import com.instakill.interaction.domain.LikeCreatedEvent;
+import com.instakill.interaction.domain.NoOpDomainEventPublisher;
 import com.instakill.interaction.domain.Like;
 import com.instakill.interaction.domain.LikeRepository;
 import com.instakill.post.domain.Post;
@@ -25,6 +28,7 @@ class InteractionServiceTest {
     private final PostRepository postRepository = mock(PostRepository.class);
     private final IdGenerator idGenerator = mock(IdGenerator.class);
     private final Clock clock = mock(Clock.class);
+    private final DomainEventPublisher eventPublisher = mock(DomainEventPublisher.class);
 
     private InteractionService service;
     private final UUID postId = UUID.randomUUID();
@@ -33,7 +37,7 @@ class InteractionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new InteractionService(commentRepository, likeRepository, postRepository, idGenerator, clock);
+        service = new InteractionService(commentRepository, likeRepository, postRepository, idGenerator, clock, eventPublisher);
         when(postRepository.findById(postId)).thenReturn(Optional.of(post));
         when(clock.now()).thenReturn(Instant.parse("2024-01-01T00:00:00Z"));
     }
@@ -69,6 +73,35 @@ class InteractionServiceTest {
         ArgumentCaptor<Post> postCaptor = ArgumentCaptor.forClass(Post.class);
         verify(postRepository).save(postCaptor.capture());
         assertThat(postCaptor.getValue().likeCount()).isZero();
+        // Unliking must not publish a LikeCreatedEvent.
+        verifyNoInteractions(eventPublisher);
+    }
 
+    @Test
+    void publishesLikeCreatedEventWhenLikeIsAdded() {
+        when(idGenerator.generate()).thenReturn(UUID.randomUUID());
+        when(likeRepository.findByPostIdAndUserId(postId, userId)).thenReturn(Optional.empty());
+        when(likeRepository.countByPostId(postId)).thenReturn(1L);
+
+        service.toggleLike(postId, userId);
+
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publish(eventCaptor.capture());
+        assertThat(eventCaptor.getValue())
+                .isEqualTo(new LikeCreatedEvent(postId, userId, Instant.parse("2024-01-01T00:00:00Z")));
+    }
+
+    @Test
+    void worksWithNoOpPublisher() {
+        // The Null Object publisher means no null checks and no exceptions are needed.
+        InteractionService withNoOp = new InteractionService(
+                commentRepository, likeRepository, postRepository, idGenerator, clock, new NoOpDomainEventPublisher());
+        when(idGenerator.generate()).thenReturn(UUID.randomUUID());
+        when(likeRepository.findByPostIdAndUserId(postId, userId)).thenReturn(Optional.empty());
+        when(likeRepository.countByPostId(postId)).thenReturn(1L);
+
+        InteractionService.ToggleLikeResult result = withNoOp.toggleLike(postId, userId);
+
+        assertThat(result.liked()).isTrue();
     }
 }
