@@ -86,7 +86,7 @@ workspace "Instakill" "C4 model of Instakill as it exists today (Week 2 lab)" {
 
         component backend "Components" "Level 3 – Components of the Backend" {
             include *
-            autoLayout tb
+            autoLayout lr
         }
 
         styles {
