@@ -1,10 +1,10 @@
 # Week 2 – Quality Attribute Assessment
 
-Instakill today is a single Spring Boot process that serves both a REST API (for the Vue SPA) and server-rendered Thymeleaf pages, backed by one SQLite file. Diagrams: [context](context.png), [container](container.png), [component](component.png) (source: [workspace.dsl](workspace.dsl)).
+Instakill today is a single Spring Boot process that serves both a REST API (for the Vue SPA) and server-rendered Thymeleaf pages, backed by one SQLite file. Diagrams: [context](diagrams/1-context.png), [container](diagrams/2-container.png), [component](diagrams/3-component.png) (source: [workspace.dsl](workspace.dsl)).
 
-![Context](context.png)
-![Container](container.png)
-![Component](component.png)
+![Context](diagrams/1-context.png)
+![Container](diagrams/2-container.png)
+![Component](diagrams/3-component.png)
 
 ## Ratings
 

@@ -75,7 +75,7 @@ workspace "Instakill" "C4 model of Instakill as it exists today (Week 2 lab)" {
 
         container instakill "Containers" "Container diagram for Instakill" {
             include *
-            autoLayout lr
+            autoLayout lr 350 250
         }
 
         component backend "Components" "Component diagram for the Backend container" {
