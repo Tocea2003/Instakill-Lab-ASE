@@ -1,84 +1,90 @@
 workspace "Instakill" "C4 model of Instakill as it exists today (Week 2 lab)" {
 
     model {
-        user = person "User" "Visitor who registers, logs in, browses the feed, posts, likes and comments."
+        user = person "User" "Registers, logs in, reads the feed, creates posts, likes and comments. Anonymous visitors can only log in or register."
 
-        instakill = softwareSystem "Instakill" "Instagram-style social feed (monolith)." {
+        imageHosts = softwareSystem "External Image Hosts" "Any public URL (e.g. Unsplash). Instakill stores only the image URL; the browser loads the image directly." "External"
 
-            spa = container "Vue SPA" "Login/register, feed with Newest/Trending sort, composer, likes, comments." "Vue 3, Vite, axios" "Browser"
+        instakill = softwareSystem "Instakill" "Instagram-style social feed. One Spring Boot monolith + Vue SPA + SQLite." {
 
-            backend = container "Backend" "REST API for the SPA plus server-rendered Thymeleaf pages. One deployable unit." "Java 23, Spring Boot 3.3" {
+            spa = container "Vue SPA" "Single-page app: login/register, feed (Newest / Trending), composer, likes, comments." "Vue 3, Vite dev server :5173, axios" "Browser"
 
-                restApi = component "REST Controllers" "/api/auth, /api/users, /api/posts, /api/feed, /api/health" "Spring MVC @RestController"
-                webUi = component "Web Controllers" "Pages under /feed, /posts and /auth rendered with Thymeleaf templates" "Spring MVC @Controller, Thymeleaf"
-                security = component "Security" "Two filter chains (stateless /api, CSRF-protected web). Reads the ACCESS_TOKEN cookie, validates the JWT." "Spring Security, JwtAuthenticationFilter, JwtTokenService"
-                errors = component "Error Handling" "Maps domain exceptions to RFC 7807 ProblemDetail responses." "RestExceptionHandler"
-                requestId = component "Request Id Filter" "Adds X-Request-Id and puts it in the logging MDC." "RequestIdFilter"
+            backend = container "Backend" "Serves the JSON REST API for the SPA and the server-rendered Thymeleaf pages. Single deployable." "Java 23, Spring Boot 3.3, port 8080" {
 
-                authService = component "AuthService / UserService" "Register, login, password hashing, user lookup." "Spring @Service"
-                postService = component "PostService" "Create, read and delete own posts; delegates feed listing." "Spring @Service"
-                feedService = component "FeedService" "Picks a ranking strategy by FeedSort." "Spring @Service"
-                strategies = component "Feed Ranking Strategies" "Newest and Trending (in-memory sort over recent posts)." "FeedRankingStrategy implementations"
-                interactionService = component "InteractionService" "Likes and comments; updates denormalized counters on the post." "Spring @Service"
-                events = component "DomainEventPublisher" "Receives LikeCreatedEvent. Only a no-op implementation exists." "NoOpDomainEventPublisher"
+                group "Presentation" {
+                    filters = component "HTTP Filter Chain" "RequestIdFilter adds X-Request-Id. Spring Security runs two chains: /api (stateless) and web (CSRF). JwtAuthenticationFilter reads the ACCESS_TOKEN cookie." "Servlet filters, Spring Security"
+                    controllers = component "Controllers" "REST: /api/auth, /api/users, /api/posts, /api/feed -> JSON for the SPA. Web: /auth, /feed, /posts -> Thymeleaf HTML pages." "@RestController, @Controller"
+                    errors = component "REST Exception Handler" "Turns domain exceptions into RFC 7807 ProblemDetail (404, 403, 409, 422)." "@RestControllerAdvice"
+                }
 
-                repos = component "Domain Repositories" "User, Post, Comment and Like repository interfaces plus domain records." "Java interfaces / records"
-                adapters = component "JPA Adapters" "Implement the repository interfaces and map entities to domain objects." "Spring Data JPA, Hibernate"
+                group "Application" {
+                    authService = component "AuthService / UserService" "Register, login (BCrypt), issue JWT, look up users." "@Service"
+                    postService = component "PostService" "Create / get / delete own post. Delegates feed listing." "@Service"
+                    feedService = component "FeedService" "Chooses a ranking strategy by FeedSort (NEW, TRENDING)." "@Service, Strategy pattern"
+                    interactionService = component "InteractionService" "Toggle like, add / list comments. Recomputes like and comment counters on the post." "@Service"
+                }
 
-                # Entry points
-                restApi -> security "Authenticated principal from"
-                webUi -> security "Authenticated principal from"
-                restApi -> errors "Exceptions handled by"
+                group "Domain" {
+                    strategies = component "Feed Ranking Strategies" "Newest: latest posts. Trending: sorts recent posts by likes, comments, date (in memory)." "FeedRankingStrategy"
+                    events = component "Domain Event Publisher" "Receives LikeCreatedEvent. Currently a no-op." "DomainEventPublisher (Null Object)"
+                    repos = component "Repository Ports" "UserRepository, PostRepository, CommentRepository, LikeRepository + domain records." "Java interfaces"
+                }
 
-                # Controllers to services
-                restApi -> authService "Uses"
-                restApi -> postService "Uses"
-                restApi -> interactionService "Uses"
-                webUi -> authService "Uses"
-                webUi -> postService "Uses"
-                webUi -> interactionService "Uses"
-
-                # Application layer
-                authService -> repos "Uses"
-                postService -> repos "Uses"
-                postService -> feedService "Lists feed via"
-                feedService -> strategies "Delegates ranking to"
-                strategies -> repos "Queries posts through"
-                interactionService -> repos "Reads/writes likes, comments, post counters"
-                interactionService -> events "Publishes LikeCreatedEvent to"
-
-                # Persistence
-                adapters -> repos "Implements" "" "Implements"
+                group "Infrastructure" {
+                    jwt = component "JwtTokenService" "Creates and validates HS256 JWTs." "jjwt"
+                    adapters = component "JPA Adapters" "Implement the repository ports; map entities to domain records." "Spring Data JPA, Hibernate"
+                }
             }
 
-            database = container "Database" "Users, posts, comments, likes. Schema generated by Hibernate (ddl-auto: update)." "SQLite file (instakill.db)" "Database"
+            database = container "Database" "Tables: users, posts, comments, likes. Schema created by Hibernate (ddl-auto: update)." "SQLite file instakill.db" "Database"
         }
 
-        # Context level
-        user -> instakill "Browses feed, posts, likes, comments" "HTTPS"
+        # ---- Context level
+        user -> instakill "Uses the social feed" "Browser, HTTP"
+        user -> imageHosts "Loads post images from" "HTTPS"
 
-        # Container level
+        # ---- Requests entering the backend (imply the container-level arrows)
         user -> spa "Uses" "Browser"
-        user -> backend "Uses server-rendered pages" "HTTP"
-        spa -> backend "Calls the JSON API under /api, cookie auth" "HTTP/JSON, axios"
-        backend -> database "Reads and writes" "JDBC"
+        spa -> filters "JSON requests to /api, ACCESS_TOKEN cookie" "HTTP/JSON"
+        user -> filters "Opens server-rendered pages" "HTTP"
 
-        # Component-level link to the database
-        adapters -> database "Reads and writes" "JDBC"
+        filters -> controllers "Passes authenticated requests"
+        filters -> jwt "Validates token with"
+        controllers -> errors "REST exceptions mapped by"
+
+        # ---- Presentation -> Application
+        controllers -> authService "register, login, current user"
+        controllers -> postService "create / get / delete post, list feed"
+        controllers -> interactionService "toggle like, add / list comments"
+
+        # ---- Application layer
+        authService -> jwt "Issues token with"
+        authService -> repos "Users"
+        postService -> feedService "Lists feed via"
+        postService -> repos "Posts"
+        feedService -> strategies "Delegates ranking to"
+        strategies -> repos "Reads latest posts"
+        interactionService -> repos "Likes, comments, post counters"
+        interactionService -> events "Publishes LikeCreatedEvent"
+
+        # ---- Infrastructure
+        repos -> adapters "Implemented by"
+        adapters -> database "SQL queries" "JDBC, Hibernate"
     }
 
     views {
-        systemContext instakill "Context" "System Context diagram for Instakill" {
+        systemContext instakill "Context" "Level 1 – System Context" {
             include *
+            include imageHosts
             autoLayout lr
         }
 
-        container instakill "Containers" "Container diagram for Instakill" {
+        container instakill "Containers" "Level 2 – Containers" {
             include *
-            autoLayout lr 350 250
+            autoLayout tb
         }
 
-        component backend "Components" "Component diagram for the Backend container" {
+        component backend "Components" "Level 3 – Components of the Backend" {
             include *
             autoLayout tb
         }
@@ -91,6 +97,10 @@ workspace "Instakill" "C4 model of Instakill as it exists today (Week 2 lab)" {
             }
             element "Software System" {
                 background #1168bd
+                color #ffffff
+            }
+            element "External" {
+                background #999999
                 color #ffffff
             }
             element "Container" {
