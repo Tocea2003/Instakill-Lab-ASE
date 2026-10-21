@@ -27,9 +27,15 @@
       <section v-else class="feed">
         <form @submit.prevent="createNewPost" class="card form composer">
           <textarea v-model="composer.content" rows="3" placeholder="Share something..." required></textarea>
-          <input v-model="composer.imageUrl" placeholder="Image URL (optional)">
+          <input v-model="composer.imageUrl" placeholder="Image/video URL (optional)" :disabled="uploading">
+          <label class="file-picker">
+            or upload a file:
+            <input type="file" accept="image/*,video/mp4,video/quicktime,video/webm" :disabled="uploading" @change="onFileChosen">
+          </label>
+          <p v-if="uploading">Uploading...</p>
+          <p v-if="uploadError" class="error">{{ uploadError }}</p>
           <div class="actions">
-            <button type="submit">Post</button>
+            <button type="submit" :disabled="uploading">Post</button>
           </div>
         </form>
 
@@ -54,7 +60,8 @@
             </div>
           </header>
           <p>{{ post.content }}</p>
-          <img v-if="post.imageUrl" :src="post.imageUrl" alt="post image">
+          <video v-if="isVideo(post.imageUrl)" :src="post.imageUrl" controls></video>
+          <img v-else-if="post.imageUrl" :src="post.imageUrl" alt="post image">
           
           <!-- Comments Section -->
           <section class="comments">
@@ -92,7 +99,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { createPost, fetchMe, listFeed, login, register as registerUser, toggleLike, listComments, addComment } from './api'
+import { createPost, fetchMe, listFeed, login, register as registerUser, toggleLike, listComments, addComment, uploadMedia } from './api'
 
 const user = ref(null)
 const posts = ref([])
@@ -101,6 +108,8 @@ const authMode = ref('login')
 const error = ref('')
 const authForm = reactive({ username: '', email: '', password: '', usernameOrEmail: '' })
 const composer = reactive({ content: '', imageUrl: '' })
+const uploading = ref(false)
+const uploadError = ref('')
 
 // Comments state
 const comments = reactive({})
@@ -178,6 +187,26 @@ async function submitComment(postId) {
   } finally {
     commentLoading[postId] = false
   }
+}
+
+async function onFileChosen(event) {
+  const file = event.target.files[0]
+  if (!file) return
+  uploading.value = true
+  uploadError.value = ''
+  try {
+    const { mediaUrl } = await uploadMedia(file)
+    composer.imageUrl = mediaUrl
+  } catch (e) {
+    uploadError.value = e.response?.data?.detail || 'Upload failed'
+    event.target.value = ''
+  } finally {
+    uploading.value = false
+  }
+}
+
+function isVideo(url) {
+  return !!url && /\.(mp4|mov|webm)(\?.*)?$/i.test(url)
 }
 
 async function createNewPost() {
@@ -327,7 +356,8 @@ async function logout() {
   margin-bottom: 0.75rem;
 }
 
-.post img {
+.post img,
+.post video {
   margin-top: 0.75rem;
   width: 100%;
   border-radius: 12px;
