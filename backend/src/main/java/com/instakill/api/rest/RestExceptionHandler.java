@@ -13,6 +13,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.net.URI;
 import java.util.HashMap;
@@ -57,6 +58,14 @@ public class RestExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
         problem.setTitle(status.getReasonPhrase());
         problem.setType(URI.create("https://instakill.dev/errors/" + status.value()));
+        return problem;
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ProblemDetail handleTooLarge(MaxUploadSizeExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.PAYLOAD_TOO_LARGE, "Uploaded file is too large");
+        problem.setTitle(HttpStatus.PAYLOAD_TOO_LARGE.getReasonPhrase());
+        problem.setType(URI.create("https://instakill.dev/errors/413"));
         return problem;
     }
 

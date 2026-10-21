@@ -19,3 +19,6 @@ gradle/wrapper/
 **/gradle/wrapper/**
 **/.gradle/
 .temp/
+
+# uploaded media
+/backend/media/
