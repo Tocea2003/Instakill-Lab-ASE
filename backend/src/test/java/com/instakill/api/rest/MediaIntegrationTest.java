@@ -2,6 +2,10 @@ package com.instakill.api.rest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -39,9 +43,11 @@ class MediaIntegrationTest {
     }
 
     @Test
-    void uploadedFileIsServedBack() throws Exception {
+    void uploadedImageIsResizedAndServedBack() throws Exception {
         Cookie token = register("mediauser");
-        byte[] bytes = {10, 20, 30, 40};
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(900, 600, BufferedImage.TYPE_INT_RGB), "png", png);
+        byte[] bytes = png.toByteArray();
 
         MvcResult upload = mockMvc.perform(multipart("/api/media")
                         .file(new MockMultipartFile("file", "pic.png", "image/png", bytes))
@@ -53,7 +59,9 @@ class MediaIntegrationTest {
         assertThat(url).startsWith("/media/").endsWith(".png");
 
         MvcResult fetched = mockMvc.perform(get(url).cookie(token)).andExpect(status().isOk()).andReturn();
-        assertThat(fetched.getResponse().getContentAsByteArray()).isEqualTo(bytes);
+        BufferedImage served = ImageIO.read(new ByteArrayInputStream(fetched.getResponse().getContentAsByteArray()));
+        assertThat(served.getWidth()).isEqualTo(300);
+        assertThat(served.getHeight()).isEqualTo(200);
     }
 
     @Test
