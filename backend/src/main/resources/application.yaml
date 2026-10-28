@@ -26,6 +26,9 @@ management:
         include: health,info
 media:
   base-path: media
+  processing:
+    max-width: 300
+    watermark: Instakill Demo
 instakill:
   jwt:
     secret: change-me-change-me-change-me-change-me-change-me-secret-key-1234
@@ -34,3 +37,9 @@ instakill:
 logging:
   level:
     org.hibernate.SQL: warn
+
+notification:
+  ntfy:
+    enabled: false
+    base-url: https://ntfy.sh
+    topic: instakill-demo
