@@ -13,7 +13,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "likes", indexes = {
-        @Index(name = "idx_likes_post_user", columnList = "post_id,user_id", unique = true)
+        @Index(name = "idx_likes_post_user", columnList = "post_id,user_id", unique = true),
+        @Index(name = "idx_likes_post", columnList = "post_id")
 })
 public class LikeEntity {
 
