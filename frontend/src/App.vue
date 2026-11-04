@@ -3,6 +3,8 @@
     <header class="app-header">
       <h1>Instakill</h1>
       <nav v-if="user">
+        <button :class="{ active: view === 'feed' }" @click="view = 'feed'">Feed</button>
+        <button :class="{ active: view === 'analytics' }" @click="view = 'analytics'">Analytics</button>
         <span class="user">@{{ user.username }}</span>
         <button @click="logout">Logout</button>
       </nav>
@@ -24,7 +26,7 @@
         </form>
       </section>
 
-      <section v-else class="feed">
+      <section v-else-if="view === 'feed'" class="feed">
         <form @submit.prevent="createNewPost" class="card form composer">
           <textarea v-model="composer.content" rows="3" placeholder="Share something..." required></textarea>
           <input v-model="composer.imageUrl" placeholder="Image/video URL (optional)" :disabled="uploading">
@@ -93,16 +95,20 @@
           </footer>
         </article>
       </section>
+
+      <Analytics v-else />
     </main>
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import Analytics from './Analytics.vue'
 import { createPost, fetchMe, listFeed, login, register as registerUser, toggleLike, listComments, addComment, uploadMedia } from './api'
 
 const user = ref(null)
 const posts = ref([])
+const view = ref('feed')
 const sort = ref('new')
 const authMode = ref('login')
 const error = ref('')
@@ -241,6 +247,7 @@ async function logout() {
   }
   document.cookie = 'ACCESS_TOKEN=; Max-Age=0; path=/'
   user.value = null
+  view.value = 'feed'
   posts.value = []
 }
 </script>

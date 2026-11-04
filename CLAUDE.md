@@ -33,7 +33,7 @@ To reset dev data, delete `backend/instakill.db`. `DataInitializer` only seeds w
 
 ## Architecture
 
-Code lives in `backend/src/main/java/com/instakill/`, with one package per bounded context: `user`, `post`, `feed`, `interaction` (likes and comments). Each context follows a hexagonal layout:
+Code lives in `backend/src/main/java/com/instakill/`, with one package per bounded context: `user`, `post`, `feed`, `interaction` (likes and comments), `media`, `analytics`. Each context follows a hexagonal layout:
 
 - `domain/`: immutable Java `record`s that validate in their compact constructors (e.g. `Post` caps content at 1000 chars and requires non-negative counts), plus repository **interfaces** (`PostRepository`, etc.). Domain code has no JPA or Spring Data imports.
 - `application/`: `@Service` classes annotated `@Transactional(readOnly = true)` at class level, with `@Transactional` on the methods that write.
