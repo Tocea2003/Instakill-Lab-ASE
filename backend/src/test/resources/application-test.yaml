@@ -17,5 +17,11 @@ instakill:
     secret: test-secret-change-me-change-me-change-me-change-me-1234567890
     issuer: instakill-test
     ttl-minutes: 60
+  llm:
+    # Nothing listens on port 1: tests exercise the "LM Studio not running" path, never a real model.
+    url: http://127.0.0.1:1/v1/chat/completions
+    model: test-model
+    system-prompt: Be funny.
+    read-timeout: 2s
 media:
   base-path: ${java.io.tmpdir}/instakill-test-media

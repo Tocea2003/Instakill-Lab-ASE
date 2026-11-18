@@ -51,6 +51,8 @@ Cross-cutting packages:
 - `PostService.listFeed` delegates to `feed.application.FeedService`, which uses the Strategy pattern (Task 1). Spring injects every `FeedRankingStrategy` `@Component`, and `FeedService` indexes them by `sort()` into an `EnumMap`. To add a sort mode, add a `FeedSort` value (and map it in `FeedSort.from`) and write a new strategy class. Don't edit `FeedService`. Two strategies for the same sort fail at startup.
 - `InteractionService` writes `Post.likeCount` and `Post.commentCount` through `PostRepository`. These counters are denormalized on the post, recomputed from `count*ByPostId` after every change. After adding a like it publishes a `LikeCreatedEvent` through `DomainEventPublisher` (Task 2). The only bean is `NoOpDomainEventPublisher`, a Null Object; to plug in a real publisher, mark it `@Primary`.
 
+- `funnyfy` (Lab 7) calls an external LLM. `FunnyfyService` depends on the `TextRewriter` port; `OpenAiChatTextRewriter` is the adapter to an OpenAI-compatible `/v1/chat/completions` (LM Studio on :12345). It's configured under `instakill.llm.*` (URL from `LOCAL_LLM_URL`) and turns failures into `UpstreamUnavailableException`/`UpstreamTimeoutException`/`BadGatewayException` (503/504/502). The test profile points the URL at a closed port, so tests never need a model.
+
 ### Security
 
 `SecurityConfig` defines two filter chains:

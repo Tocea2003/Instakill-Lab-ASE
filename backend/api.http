@@ -34,3 +34,12 @@ Cookie: ACCESS_TOKEN={{token}}
 ### Toggle like
 POST http://localhost:8080/api/posts/{{postId}}/likes/toggle
 Cookie: ACCESS_TOKEN={{token}}
+
+### Make a caption funnier through the local LLM (LM Studio on :12345 must be running)
+POST http://localhost:8080/api/funnyfy
+Content-Type: application/json
+Cookie: ACCESS_TOKEN={{token}}
+
+{
+  "text": "Today I'm at my 7th Software Engineering lab."
+}

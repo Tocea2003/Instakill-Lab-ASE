@@ -34,6 +34,10 @@ The bootstrap downloads Gradle 8.9 and generates a local wrapper (ignored by git
 - REST OpenAPI UI: http://localhost:8080/api/swagger
 - Health: http://localhost:8080/actuator/health
 
+## "Make It Funnier" (local LLM)
+
+The post composer can rewrite a caption in a funnier style through a model served by LM Studio on port 12345 (`POST /api/funnyfy`). Start LM Studio's server with `google/gemma-3-270m` loaded, then check it with `./scripts/check-local-llm.sh` (or `.\scripts\check-local-llm.ps1`). The endpoint URL comes from `LOCAL_LLM_URL` (default `http://localhost:12345/v1/chat/completions`). If the model server is down, the button shows an error and the text is left unchanged. Details are in `docs/task6-funnyfy-local-llm.md`.
+
 ## Authentication
 
 Authentication uses JWT stored in an `ACCESS_TOKEN` HttpOnly cookie. REST clients can authenticate by capturing the cookie returned from `/api/auth/login` or by sending the token manually.

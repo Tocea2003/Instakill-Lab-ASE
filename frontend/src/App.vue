@@ -28,7 +28,20 @@
 
       <section v-else-if="view === 'feed'" class="feed">
         <form @submit.prevent="createNewPost" class="card form composer">
-          <textarea v-model="composer.content" rows="3" placeholder="Share something..." required></textarea>
+          <textarea v-model="composer.content" rows="3" maxlength="1000" placeholder="Share something..." required :disabled="funnying"></textarea>
+          <div class="funny-row">
+            <button
+              type="button"
+              class="funny-btn"
+              :disabled="funnying || !composer.content.trim()"
+              :aria-busy="funnying"
+              @click="makeFunnier"
+            >
+              <span v-if="funnying" class="spinner" aria-hidden="true"></span>
+              {{ funnying ? 'Making it funnier...' : 'Make It Funnier' }}
+            </button>
+            <button v-if="canUndoFunny" type="button" class="undo-btn" @click="undoFunny">Undo</button>
+          </div>
           <input v-model="composer.imageUrl" placeholder="Image/video URL (optional)" :disabled="uploading">
           <label class="file-picker">
             or upload a file:
@@ -98,13 +111,21 @@
 
       <Analytics v-else />
     </main>
+
+    <transition name="toast">
+      <div v-if="toast" :class="['toast', toast.kind]" :role="toast.kind === 'error' ? 'alert' : 'status'">
+        <span>{{ toast.message }}</span>
+        <button v-if="toast.kind === 'success' && canUndoFunny" type="button" @click="undoFunny">Undo</button>
+        <button type="button" class="close" aria-label="Dismiss" @click="hideToast">&times;</button>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import Analytics from './Analytics.vue'
-import { createPost, fetchMe, listFeed, login, register as registerUser, toggleLike, listComments, addComment, uploadMedia } from './api'
+import { createPost, fetchMe, listFeed, login, register as registerUser, toggleLike, listComments, addComment, uploadMedia, funnyfy } from './api'
 
 const user = ref(null)
 const posts = ref([])
@@ -116,6 +137,13 @@ const authForm = reactive({ username: '', email: '', password: '', usernameOrEma
 const composer = reactive({ content: '', imageUrl: '' })
 const uploading = ref(false)
 const uploadError = ref('')
+
+// "Make It Funnier" state
+const funnying = ref(false)
+const funnyUndo = ref(null) // { before, after } of the last rewrite
+const canUndoFunny = computed(() => !!funnyUndo.value && composer.content === funnyUndo.value.after)
+const toast = ref(null) // { kind: 'success' | 'error', message }
+let toastTimer = null
 
 // Comments state
 const comments = reactive({})
@@ -211,6 +239,47 @@ async function onFileChosen(event) {
   }
 }
 
+async function makeFunnier() {
+  const before = composer.content
+  if (!before.trim() || funnying.value) return
+  funnying.value = true
+  hideToast()
+  try {
+    const { text } = await funnyfy(before)
+    composer.content = text
+    funnyUndo.value = { before, after: text }
+    showToast('success', 'Your post just got funnier 😎')
+  } catch (e) {
+    showToast('error', funnyErrorMessage(e))
+  } finally {
+    funnying.value = false
+  }
+}
+
+function funnyErrorMessage(e) {
+  const status = e.response?.status
+  if (status === 401 || status === 403) return 'Please log in again to use Make It Funnier.'
+  return e.response?.data?.detail || 'Could not make it funnier right now. Your text was not changed.'
+}
+
+function undoFunny() {
+  if (!canUndoFunny.value) return
+  composer.content = funnyUndo.value.before
+  funnyUndo.value = null
+  hideToast()
+}
+
+function showToast(kind, message) {
+  clearTimeout(toastTimer)
+  toast.value = { kind, message }
+  toastTimer = setTimeout(hideToast, kind === 'error' ? 6000 : 5000)
+}
+
+function hideToast() {
+  clearTimeout(toastTimer)
+  toast.value = null
+}
+
 function isVideo(url) {
   return !!url && /\.(mp4|mov|webm)(\?.*)?$/i.test(url)
 }
@@ -220,6 +289,7 @@ async function createNewPost() {
   await createPost({ content: composer.content, imageUrl: composer.imageUrl || null })
   composer.content = ''
   composer.imageUrl = ''
+  funnyUndo.value = null
   await loadFeed()
 }
 
@@ -412,5 +482,91 @@ async function logout() {
   border: none;
   padding: 0.4rem 1.1rem;
   border-radius: 999px;
+}
+
+.funny-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.form .funny-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f59e0b;
+  color: #111827;
+  font-weight: 600;
+}
+
+.form .funny-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.form .undo-btn {
+  background: transparent;
+  color: #2563eb;
+  padding: 0.5rem 0.25rem;
+}
+
+.spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.toast {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  max-width: min(420px, calc(100vw - 3rem));
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: #111827;
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.25);
+  z-index: 10;
+}
+
+.toast.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.toast button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.toast .close {
+  text-decoration: none;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(0.5rem);
 }
 </style>

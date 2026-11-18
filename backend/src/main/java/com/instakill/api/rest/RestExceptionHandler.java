@@ -1,11 +1,14 @@
 package com.instakill.api.rest;
 
+import com.instakill.common.error.BadGatewayException;
 import com.instakill.common.error.BadRequestException;
 import com.instakill.common.error.ConflictException;
 import com.instakill.common.error.ForbiddenException;
 import com.instakill.common.error.InstakillException;
 import com.instakill.common.error.NotFoundException;
 import com.instakill.common.error.UnauthorizedException;
+import com.instakill.common.error.UpstreamTimeoutException;
+import com.instakill.common.error.UpstreamUnavailableException;
 import com.instakill.common.error.ValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -45,7 +48,8 @@ public class RestExceptionHandler {
     }
 
     @ExceptionHandler({BadRequestException.class, ConflictException.class, NotFoundException.class,
-            UnauthorizedException.class, ForbiddenException.class})
+            UnauthorizedException.class, ForbiddenException.class, BadGatewayException.class,
+            UpstreamUnavailableException.class, UpstreamTimeoutException.class})
     public ProblemDetail handleKnown(InstakillException ex) {
         HttpStatus status = switch (ex) {
             case BadRequestException ignored -> HttpStatus.BAD_REQUEST;
@@ -53,6 +57,9 @@ public class RestExceptionHandler {
             case NotFoundException ignored -> HttpStatus.NOT_FOUND;
             case UnauthorizedException ignored -> HttpStatus.UNAUTHORIZED;
             case ForbiddenException ignored -> HttpStatus.FORBIDDEN;
+            case BadGatewayException ignored -> HttpStatus.BAD_GATEWAY;
+            case UpstreamUnavailableException ignored -> HttpStatus.SERVICE_UNAVAILABLE;
+            case UpstreamTimeoutException ignored -> HttpStatus.GATEWAY_TIMEOUT;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
