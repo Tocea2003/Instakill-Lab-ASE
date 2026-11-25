@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Fill the Instakill SQLite database with configurable test data.
+"""Fill the Instakill database (SQLite by default, PostgreSQL with --postgres) with configurable test data.
 
     pip install -r scripts/requirements.txt
     python scripts/populate_db.py                 # 10 000 users, 10-20 posts each
     python scripts/populate_db.py --users 500 --seed 1
+    python scripts/populate_db.py --postgres      # same data into postgresql://instakill:...@localhost:5432/instakill
+    python scripts/populate_db.py --postgres postgresql://user:pw@host:5432/db --seed 1
 
 What it does (all against the schema Hibernate created in backend/instakill.db):
   1. deletes likes, comments, posts and every user except `alice` and `bob`
@@ -14,8 +16,10 @@ What it does (all against the schema Hibernate created in backend/instakill.db):
   4. checks integrity (no orphans, like_count/comment_count match, no duplicate likes)
 
 Stop the backend first so SQLite is not locked. The backend's tables must already exist
-(start it once; Hibernate `ddl-auto: update` creates them).
-Timestamps are epoch milliseconds, ids are UUID strings: that is how the Spring app stores them.
+(start it once; Hibernate `ddl-auto: update` creates them; for PostgreSQL start it with
+SPRING_PROFILES_ACTIVE=postgres).
+SQLite: timestamps are epoch milliseconds, ids are UUID strings: that is how the Spring app stores them.
+PostgreSQL: columns are native timestamptz / uuid, so timestamps are sent as datetimes.
 """
 import argparse
 import random
@@ -32,6 +36,9 @@ try:
 except ImportError:
     sys.exit("Missing dependencies: pip install -r scripts/requirements.txt")
 
+DEFAULT_PG_DSN = "postgresql://instakill:instakill_password@localhost:5432/instakill"
+POSTGRES = False  # set in main() by --postgres; changes how timestamps are written
+
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "backend" / "instakill.db"
 KEEP_USERS = ("alice", "bob")
 DEFAULT_PASSWORD = "password"
@@ -47,6 +54,8 @@ VIDEO_URLS = [
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite file (default: backend/instakill.db)")
+    p.add_argument("--postgres", nargs="?", const=DEFAULT_PG_DSN, metavar="DSN",
+                   help=f"write to PostgreSQL instead of SQLite (default DSN: {DEFAULT_PG_DSN})")
     p.add_argument("--users", type=int, default=10_000,
                    help="total number of users after the run, including alice, bob and charlie (default: 10000)")
     p.add_argument("--min-posts", type=int, default=10)
@@ -60,8 +69,31 @@ def parse_args():
     return p.parse_args()
 
 
-def ms(dt: datetime) -> int:
-    return int(dt.timestamp() * 1000)
+def ms(dt: datetime):
+    """Epoch milliseconds for SQLite (how the app stores Instant there); a datetime for PostgreSQL timestamptz."""
+    return dt if POSTGRES else int(dt.timestamp() * 1000)
+
+
+class PgConnection:
+    """Gives a psycopg connection the small slice of the sqlite3 API this script uses.
+
+    autocommit is on so the explicit BEGIN/COMMIT in Populator.run_tx control the transactions, and
+    sqlite-style `?` placeholders are rewritten to psycopg's `%s` (no query here contains a literal % or ?).
+    """
+
+    def __init__(self, dsn):
+        import psycopg  # imported lazily so SQLite users do not need it
+        self.conn = psycopg.connect(dsn, autocommit=True)
+
+    def execute(self, sql, params=()):
+        return self.conn.execute(sql.replace("?", "%s"), params)
+
+    def executemany(self, sql, rows):
+        with self.conn.cursor() as cur:
+            cur.executemany(sql.replace("?", "%s"), rows)
+
+    def close(self):
+        self.conn.close()
 
 
 def new_id() -> str:
@@ -193,13 +225,14 @@ class Populator:
 
 
 def check_integrity(conn) -> bool:
+    # NOT EXISTS, not NOT IN: on PostgreSQL a large NOT IN subquery falls back to a quadratic scan.
     checks = {
-        "posts without author": "SELECT COUNT(*) FROM posts WHERE author_id NOT IN (SELECT id FROM users)",
-        "comments without post": "SELECT COUNT(*) FROM comments WHERE post_id NOT IN (SELECT id FROM posts)",
-        "comments without author": "SELECT COUNT(*) FROM comments WHERE author_id NOT IN (SELECT id FROM users)",
-        "likes without post": "SELECT COUNT(*) FROM likes WHERE post_id NOT IN (SELECT id FROM posts)",
-        "likes without user": "SELECT COUNT(*) FROM likes WHERE user_id NOT IN (SELECT id FROM users)",
-        "duplicate likes": "SELECT COUNT(*) FROM (SELECT 1 FROM likes GROUP BY post_id, user_id HAVING COUNT(*) > 1)",
+        "posts without author": "SELECT COUNT(*) FROM posts p WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = p.author_id)",
+        "comments without post": "SELECT COUNT(*) FROM comments c WHERE NOT EXISTS (SELECT 1 FROM posts p WHERE p.id = c.post_id)",
+        "comments without author": "SELECT COUNT(*) FROM comments c WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = c.author_id)",
+        "likes without post": "SELECT COUNT(*) FROM likes l WHERE NOT EXISTS (SELECT 1 FROM posts p WHERE p.id = l.post_id)",
+        "likes without user": "SELECT COUNT(*) FROM likes l WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id)",
+        "duplicate likes": "SELECT COUNT(*) FROM (SELECT 1 FROM likes GROUP BY post_id, user_id HAVING COUNT(*) > 1) d",
         "wrong like_count": "SELECT COUNT(*) FROM posts p WHERE p.like_count <> (SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id)",
         "wrong comment_count": "SELECT COUNT(*) FROM posts p WHERE p.comment_count <> (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id)",
     }
@@ -218,14 +251,25 @@ def main():
     if args.seed is not None:
         random.seed(args.seed)
         Faker.seed(args.seed)
-    if not args.db.exists():
-        sys.exit(f"{args.db} not found: start the backend once so it creates the database, or pass --db")
+    global POSTGRES
+    POSTGRES = args.postgres is not None
 
-    conn = sqlite3.connect(args.db, isolation_level=None, timeout=30)  # explicit transactions
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if POSTGRES:
+        try:
+            conn = PgConnection(args.postgres)
+        except ImportError:
+            sys.exit("PostgreSQL mode needs psycopg: pip install 'psycopg[binary]'")
+        tables = {r[0] for r in conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")}
+    else:
+        if not args.db.exists():
+            sys.exit(f"{args.db} not found: start the backend once so it creates the database, or pass --db")
+        conn = sqlite3.connect(args.db, isolation_level=None, timeout=30)  # explicit transactions
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if not {"users", "posts", "comments", "likes"} <= tables:
         sys.exit("Tables missing: start the backend once so Hibernate creates the schema.")
-    conn.execute("PRAGMA synchronous = OFF")
+    if not POSTGRES:
+        conn.execute("PRAGMA synchronous = OFF")
 
     started = time.time()
     pop = Populator(conn, args)
@@ -250,6 +294,10 @@ def main():
     print("Ensuring indexes...")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_likes_post ON likes (post_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_post ON comments (post_id)")
+    if POSTGRES:
+        print("Analyzing tables (refresh planner statistics)...")
+        for table in ("users", "posts", "comments", "likes"):
+            conn.execute(f"ANALYZE {table}")
 
     print("Integrity check:")
     ok = check_integrity(conn)
