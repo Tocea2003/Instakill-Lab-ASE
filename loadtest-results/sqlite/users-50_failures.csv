@@ -1,0 +1,4 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,POST /api/posts/{id}/comments,HTTPError('500 Server Error:  for url: POST /api/posts/{id}/comments'),8,2026-11-18T18:37:09Z,2026-11-18T18:37:54Z
+POST,POST /api/posts,HTTPError('500 Server Error:  for url: POST /api/posts'),5,2026-11-18T18:37:01Z,2026-11-18T18:37:14Z
+POST,POST /api/posts/{id}/likes/toggle,HTTPError('500 Server Error:  for url: POST /api/posts/{id}/likes/toggle'),18,2026-11-18T18:37:01Z,2026-11-18T18:37:58Z

@@ -5,17 +5,20 @@ import com.instakill.analytics.domain.EngagementRank;
 import com.instakill.analytics.domain.MediaTypeAverage;
 import com.instakill.analytics.domain.TopPost;
 import com.instakill.analytics.domain.WeeklyStats;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * All statistics are computed by SQLite. Timestamps are stored as epoch milliseconds and ids as CHAR(36),
- * so the user id is passed as a string. Likes/comments are counted from their tables (source of truth),
+ * All statistics are computed by the database (SQLite by default, PostgreSQL with the {@code postgres} profile).
+ * Ids are CHAR(36), so the user id is passed as a string. On SQLite timestamps are epoch milliseconds. Likes/comments are counted from their tables (source of truth),
  * except for the cross-user ranking, which uses the denormalized counters on posts to stay fast on large data.
  */
 @Repository
@@ -31,20 +34,35 @@ public class AnalyticsJdbcRepositoryAdapter implements AnalyticsRepository {
             )
             """;
 
+    /**
+     * Ids are CHAR(36) on both databases, but SQLite keeps timestamps as epoch millis while PostgreSQL has
+     * timestamptz columns. Only the two places that touch created_at branch on this flag.
+     */
+    private final boolean postgres;
+
     private final JdbcTemplate jdbc;
 
     public AnalyticsJdbcRepositoryAdapter(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+        String product = jdbc.execute((ConnectionCallback<String>) c -> c.getMetaData().getDatabaseProductName());
+        this.postgres = product != null && product.toLowerCase().contains("postgres");
+    }
+
+    private Instant createdAt(ResultSet rs) throws SQLException {
+        return postgres ? rs.getTimestamp("created_at").toInstant() : Instant.ofEpochMilli(rs.getLong("created_at"));
     }
 
     @Override
     public List<WeeklyStats> weeklyStats(UUID userId) {
-        // 'weekday 0' moves to the coming Sunday, -6 days gives the Monday that starts the week.
+        // Monday that starts the week. SQLite: 'weekday 0' moves to the coming Sunday, -6 days gives Monday.
+        String weekStart = postgres
+                ? "date_trunc('week', created_at)::date"
+                : "date(created_at / 1000, 'unixepoch', 'weekday 0', '-6 days')";
         return jdbc.query(USER_POSTS + """
-                        SELECT date(created_at / 1000, 'unixepoch', 'weekday 0', '-6 days') AS week_start,
+                        SELECT %s AS week_start,
                                COUNT(*) AS posts, SUM(likes) AS likes, SUM(comments) AS comments
                         FROM pe GROUP BY week_start ORDER BY week_start
-                        """,
+                        """.formatted(weekStart),
                 (rs, i) -> new WeeklyStats(LocalDate.parse(rs.getString("week_start")),
                         rs.getLong("posts"), rs.getLong("likes"), rs.getLong("comments")),
                 userId.toString());
@@ -57,7 +75,7 @@ public class AnalyticsJdbcRepositoryAdapter implements AnalyticsRepository {
                         FROM pe ORDER BY engagement DESC, created_at DESC LIMIT ?
                         """,
                 (rs, i) -> new TopPost(UUID.fromString(rs.getString("id")), rs.getString("content"),
-                        Instant.ofEpochMilli(rs.getLong("created_at")),
+                        createdAt(rs),
                         rs.getLong("likes"), rs.getLong("comments"), rs.getLong("engagement")),
                 userId.toString(), limit);
     }

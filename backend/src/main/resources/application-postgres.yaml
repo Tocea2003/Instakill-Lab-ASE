@@ -1,0 +1,10 @@
+# Activate with: SPRING_PROFILES_ACTIVE=postgres ./gradlew bootRun
+# Overrides the SQLite datasource from application.yaml (Week 6 load-test comparison).
+spring:
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/instakill}
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:instakill}
+    password: ${POSTGRES_PASSWORD:instakill_password}
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
