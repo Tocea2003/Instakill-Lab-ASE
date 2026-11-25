@@ -10,7 +10,7 @@ Instakill is a Spring Boot 3 / Vue 3 starter for an Instagram-style social feed.
 
 ## First run
 
-Make sure you have Java 23 installed. 
+Make sure you have Java 21 installed (Ubuntu ships `openjdk-21-jdk`).
 
 ```bash
 # From the project root

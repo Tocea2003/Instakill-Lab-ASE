@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Instakill is an Instagram-style feed: a Spring Boot 3.3 backend (Java 23, SQLite, JWT) plus a Vue 3 + Vite SPA. It's a monolith organized by bounded context so that contexts can later be extracted into services. The repo is used for a university software-engineering lab (ASE). Each assignment refactors a piece of the backend toward a design pattern, and each one gets its own `docs/taskN-*.md` write-up (see "Assignment workflow").
+Instakill is an Instagram-style feed: a Spring Boot 3.3 backend (Java 21, SQLite, JWT) plus a Vue 3 + Vite SPA. It's a monolith organized by bounded context so that contexts can later be extracted into services. The repo is used for a university software-engineering lab (ASE). Each assignment refactors a piece of the backend toward a design pattern, and each one gets its own `docs/taskN-*.md` write-up (see "Assignment workflow").
 
 ## Commands
 
